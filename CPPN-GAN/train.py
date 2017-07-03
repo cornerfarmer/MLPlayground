@@ -57,6 +57,7 @@ class Models:
     def _build_generator(self):
         self.generator = CPPN(self.sess)
         x = tf.reshape(self.generator.y, [-1, 28, 28, 1])
+        tf.summary.image("generator", x, 1)
         self.discriminator_fake = Discriminator(self.sess, x, False)
 
         self.generator_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.true_labels, logits=self.discriminator_fake.y))
@@ -96,12 +97,16 @@ class Models:
         train_writer = tf.summary.FileWriter('tensorboard/' + time.strftime("%Y%m%d-%H%M%S"), self.sess.graph)
         tf.summary.scalar("discriminator_loss", self.discriminator_loss)
         tf.summary.scalar("generator_loss", self.generator_loss)
+
         merged_summary_op = tf.summary.merge_all()
 
         for i in range(100):
             batch = mnist.train.next_batch(500)
             _, _, summary = self.sess.run([self.train_step_gen, self.train_step_dis, merged_summary_op], feed_dict={self.d_input: batch[0], self.generator.x: self._create_generator_batch_input(x_vec, y_vec, 500)})
+
             train_writer.add_summary(summary, i)
+
+            print("Finished step " + str(i))
 
     def generate_image(self, x_vec, y_vec, size):
         return self.generator.predict(self._create_generator_batch_input(x_vec, y_vec, 1).astype(np.float32)).reshape((size, size))
