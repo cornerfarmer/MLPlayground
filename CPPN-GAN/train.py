@@ -61,20 +61,22 @@ class Models:
         self.discriminator_fake = Discriminator(self.sess, x, False)
 
         self.generator_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.true_labels, logits=self.discriminator_fake.y))
-        self.discriminator_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.false_labels, logits=self.discriminator_fake.y))
+        self.discriminator_loss_false = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.false_labels, logits=self.discriminator_fake.y))
 
         vars = [var for var in tf.trainable_variables() if "generator/" in var.name]
-        self.train_step_gen = tf.train.AdamOptimizer(1e-4, name="AdamGenerator").minimize(self.generator_loss, var_list=vars)
+        self.train_step_gen = tf.train.AdamOptimizer(0.005, name="AdamGenerator").minimize(self.generator_loss, var_list=vars)
 
     def _build_discriminator(self):
         self.d_input = tf.placeholder(tf.float32, (None, 28 * 28))
         x = tf.reshape(self.d_input, [-1, 28, 28, 1])
         self.discriminator_orig = Discriminator(self.sess, x, True)
 
-        self.discriminator_loss = self.discriminator_loss + tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.true_labels, logits=self.discriminator_orig.y))
+        self.discriminator_loss_true = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.true_labels, logits=self.discriminator_orig.y))
+        self.discriminator_loss = self.discriminator_loss_false + self.discriminator_loss_true
+        self.discriminator_loss /= 2
 
         vars = [var for var in tf.trainable_variables() if "discriminator/" in var.name]
-        self.train_step_dis = tf.train.AdamOptimizer(1e-4, name="AdamDiscriminator").minimize(self.discriminator_loss, var_list=vars)
+        self.train_step_dis = tf.cond(tf.logical_and(self.generator_loss < 0.8, self.discriminator_loss > 0.45), lambda: tf.train.AdamOptimizer(0.001, name="AdamDiscriminator").minimize(self.discriminator_loss, var_list=vars), lambda: tf.constant(False))
 
     def _create_generator_input(self, x_vec, y_vec):
         z = np.random.uniform(-1.0, 1.0, size=(1, 8)).repeat(len(y_vec) * len(x_vec), 0)
@@ -96,11 +98,13 @@ class Models:
     def train(self, x_vec, y_vec):
         train_writer = tf.summary.FileWriter('tensorboard/' + time.strftime("%Y%m%d-%H%M%S"), self.sess.graph)
         tf.summary.scalar("discriminator_loss", self.discriminator_loss)
+        tf.summary.scalar("discriminator_loss_true", self.discriminator_loss_true)
+        tf.summary.scalar("discriminator_loss_false", self.discriminator_loss_false)
         tf.summary.scalar("generator_loss", self.generator_loss)
 
         merged_summary_op = tf.summary.merge_all()
 
-        for i in range(100):
+        for i in range(10000):
             batch = mnist.train.next_batch(500)
             _, _, summary = self.sess.run([self.train_step_gen, self.train_step_dis, merged_summary_op], feed_dict={self.d_input: batch[0], self.generator.x: self._create_generator_batch_input(x_vec, y_vec, 500)})
 
