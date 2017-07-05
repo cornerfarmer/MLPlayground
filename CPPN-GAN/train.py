@@ -10,9 +10,9 @@ from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
 
-rand_input_size = 1
-generator_steps_per_iteration = 5
-batch_size = 500
+rand_input_size = 0
+generator_steps_per_iteration = 1
+batch_size = 1
 iterations = 100000
 
 class CPPN:
@@ -106,6 +106,9 @@ class Models:
         self.true_labels = tf.ones(dtype=tf.float32, shape=[1, 1])
         self.false_labels = tf.zeros(dtype=tf.float32, shape=[1, 1])
 
+        self.d_input = tf.placeholder(tf.float32, (None, 28 * 28))
+        self.d_input_shaped = tf.reshape(self.d_input, [-1, 28, 28, 1])
+
         self._build_generator()
         self._build_discriminator()
 
@@ -121,22 +124,21 @@ class Models:
         self.discriminator_loss_false = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.false_labels, logits=self.discriminator_fake.y))
 
         vars = [var for var in tf.trainable_variables() if "generator/" in var.name]
-        self.gen_optimizer = tf.train.AdamOptimizer(0.005, name="AdamGenerator")
+        self.gen_optimizer = tf.train.AdagradOptimizer(0.01, name="AdamGenerator")
         self.train_step_gen = self.gen_optimizer.minimize(self.generator_loss, var_list=vars)
 
     def _build_discriminator(self):
-        self.d_input = tf.placeholder(tf.float32, (None, 28 * 28))
-        x = tf.reshape(self.d_input, [-1, 28, 28, 1])
-        tf.summary.image("discriminator", x, 1)
-        self.discriminator_orig = MLPDiscriminator(self.sess, x, True)
+
+        tf.summary.image("discriminator", self.d_input_shaped, 1)
+        self.discriminator_orig = MLPDiscriminator(self.sess, self.d_input_shaped, True)
 
         self.discriminator_loss_true = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.true_labels, logits=self.discriminator_orig.y))
         self.discriminator_loss = self.discriminator_loss_false + self.discriminator_loss_true
         self.discriminator_loss /= 2
 
         vars = [var for var in tf.trainable_variables() if "discriminator/" in var.name]
-        self.train_step_dis = tf.cond(tf.logical_and(self.generator_loss < 0.8, self.discriminator_loss > 0.45), lambda: tf.train.AdamOptimizer(0.001, name="AdamDiscriminator").minimize(self.discriminator_loss, var_list=vars), lambda: tf.constant(False))
-        #self.train_step_dis = tf.train.AdamOptimizer(0.001, name="AdamDiscriminator").minimize(self.discriminator_loss, var_list=vars)
+        #self.train_step_dis = tf.cond(tf.logical_and(self.generator_loss < 0.8, self.discriminator_loss > 0.45), lambda: tf.train.AdamOptimizer(0.001, name="AdamDiscriminator").minimize(self.discriminator_loss, var_list=vars), lambda: tf.constant(False))
+        self.train_step_dis = tf.train.AdagradOptimizer(0.01, name="AdamDiscriminator").minimize(self.discriminator_loss, var_list=vars)
 
 
 
@@ -146,7 +148,7 @@ class Models:
         tf.summary.scalar("discriminator_loss_true", self.discriminator_loss_true)
         tf.summary.scalar("discriminator_loss_false", self.discriminator_loss_false)
         tf.summary.scalar("generator_loss", self.generator_loss)
-        tf.summary.scalar("generator_learning_rate", self.gen_optimizer._lr_t)
+#        tf.summary.scalar("generator_learning_rate", self.gen_optimizer._lr_t)
 
         merged_summary_op = tf.summary.merge_all()
 
